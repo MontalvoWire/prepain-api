@@ -232,9 +232,16 @@ def root():
 
 
 @app.get("/cursos", response_model=LearningPathsResponse)
-def cursos(lp_id: str = Query(..., alias="lp-id"), api_key: Optional[str] = Header(default=None, alias="api-key")):
+def cursos(
+    lp_id: Optional[str] = Query(default=None, alias="lp-id", description="Opcional: filtra por lp-id"),
+    api_key: Optional[str] = Header(default=None, alias="api-key"),
+):
     require_api_key(api_key)
-    learning_paths = [build_learning_path(lp_id)]
+    learning_paths = (
+        [build_learning_path(lp_id)]
+        if lp_id
+        else [build_learning_path("lp-1"), build_learning_path("lp-2")]
+    )
     pagination = Pagination(total=len(learning_paths), pages=1, page=1, limit=len(learning_paths))
     return LearningPathsResponse(data=learning_paths, pagination=pagination)
 
