@@ -1,0 +1,549 @@
+openapi: 3.0.0
+info:
+  title: PrepaIn API
+  version: '1.0'
+  description: Documentación de la API de PrepaIn
+servers:
+  - url: http://prepa.in/api
+  - description: Testing
+    url: https://virtserver.swaggerhub.com/montalvowire/PrepaIn/1.0
+  - description: QA Prepa In
+    url: http://prepa.in/api
+
+paths:
+  /cursos:
+    get:
+      summary: Obtener Learning Paths
+      parameters:
+        - in: header
+          name: api-key
+          schema:
+            type: string
+          required: true
+          description: Token JWT
+        - in: query
+          name: lp-id
+          schema:
+            type: string
+          required: true
+          description: ID del Learning path
+      responses:
+        '200':
+          description: Lista de Learning Paths
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LearningPathsResponse'
+        '401':
+          description: No autorizado. Token JWT inválido o faltante.
+
+  /cursos/{cursoId}:
+    get:
+      summary: Obtener información de un curso individual
+      parameters:
+        - in: header
+          name: api-key
+          schema:
+            type: string
+          required: true
+          description: Token JWT
+        - name: cursoId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID del curso
+      responses:
+        '200':
+          description: Información del curso individual
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Course'
+        '401':
+          description: No autorizado. Token JWT inválido o faltante.
+        '404':
+          description: Curso no encontrado.
+
+  /user-lms-progress:
+    get:
+      summary: Obtener progreso del usuario en LMS
+      parameters:
+        - in: header
+          name: api-key
+          schema:
+            type: string
+          required: true
+          description: Token JWT
+        - in: query
+          name: user-id
+          schema:
+            type: string
+          required: true
+          description: ID del usuario en el LMS
+        - in: query
+          name: lp-id
+          schema:
+            type: string
+          required: true
+          description: ID del Learning path
+      responses:
+        '200':
+          description: Progreso del usuario
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserLMSProgressResponse'
+        '400':
+          description: Solicitud incorrecta. Faltan parámetros.
+        '401':
+          description: No autorizado. Token JWT inválido o faltante.
+
+  /redeem:
+    post:
+      summary: Redimir tarjetas, suscribir usuario a Moodle y generar token
+      description: >
+        Redime tarjetas, registra o localiza al usuario, lo inscribe al plan de
+        carrera en Moodle y genera un token que posteriormente será validado en
+        el endpoint `/token`.
+      parameters:
+        - in: header
+          name: api-key
+          schema:
+            type: string
+          required: true
+          description: Token JWT
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RedeemRequest'
+      responses:
+        '200':
+          description: Redención exitosa. Usuario inscrito y token generado.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RedeemResponse'
+        '400':
+          description: Solicitud incorrecta. Datos inválidos.
+        '401':
+          description: No autorizado. Token JWT inválido o faltante.
+        '500':
+          description: Error interno del servidor durante la redención.
+
+  /token:
+    post:
+      summary: Valida token y obtiene información del usuario
+      description: >
+        Valida el token generado previamente por el endpoint `/redeem` y
+        devuelve el ID del usuario y el ID del plan de carrera asociado.
+      parameters:
+        - in: header
+          name: token
+          schema:
+            type: string
+          required: true
+          description: Token generado por el endpoint `/redeem`
+      responses:
+        '200':
+          description: Token válido
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenValidation'
+        '400':
+          description: Token inválido o error en la solicitud.
+        '500':
+          description: Error interno al procesar el token.
+
+components:
+  schemas:
+    LearningPathsResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/LearningPath'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+
+    TokenValidation:
+      type: object
+      properties:
+        user_id:
+          type: string
+          description: ID del usuario
+          example: '1'
+        lp_id:
+          type: string
+          description: ID del plan de carrera
+          example: '1'
+
+    LearningPath:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID del plan de carrera
+          example: '1'
+        name:
+          type: string
+          description: Nombre del plan de carrera
+          example: Plan Demo
+        image_url:
+          type: string
+          description: Imagen del plan de carrera
+        conditioned_courses:
+          type: boolean
+          description: Bandera condicional para cursos
+          example: false
+        conditioned_sections:
+          type: boolean
+          description: Bandera condicional para secciones
+          example: false
+        min_progress:
+          type: integer
+          description: Porcentaje para considerarse finalizado
+          example: 0
+        certificate_delivery:
+          type: string
+          description: "LP ONLY"
+          example: LP ONLY
+        condition_delivery:
+          type: string
+          description: "LP END"
+          example: LP END
+        welcome_message:
+          type: string
+          description: Mensaje de bienvenida
+          example: msg
+        is_gamified:
+          type: boolean
+          description: Indica si es gamificado
+          example: false
+        status:
+          type: string
+          description: Estado del plan de carrera
+          example: active
+        start_date:
+          type: string
+          format: date-time
+          description: Fecha de inicio
+          example: 2025-03-10
+        end_date:
+          type: string
+          format: date-time
+          description: Fecha de fin
+          example: null
+        created_at:
+          type: string
+          format: date-time
+          description: Fecha de creación
+          example: 2025-03-10
+        updated_at:
+          type: string
+          format: date-time
+          description: Fecha de actualización
+          example: 2025-03-10
+        description:
+          type: string
+          description: Descripción del curso
+          example: Descripción
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/Section'
+
+    Section:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Nombre del curso
+          example: Curso Demo
+        courses:
+          type: array
+          items:
+            $ref: '#/components/schemas/Course'
+
+    Course:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID de la materia
+          example: '1'
+        name:
+          type: string
+          description: Nombre de la materia
+          example: Materia Demo
+        modules:
+          type: array
+          items:
+            $ref: '#/components/schemas/Module'
+
+    Module:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID del módulo
+          example: '1'
+        name:
+          type: string
+          description: Nombre del módulo
+          example: Módulo Demo
+        description:
+          type: string
+          description: Descripción del módulo
+          example: Descripción
+        lessons:
+          type: array
+          items:
+            $ref: '#/components/schemas/Lesson'
+
+    Lesson:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Nombre del tema
+          example: Tema Demo
+        description:
+          type: string
+          description: Descripción del tema
+          example: Descripción
+        type:
+          type: string
+          description: Tipo de contenido
+          example: Demo
+        subtype:
+          type: string
+          description: Formato del contenido
+          example: Demo
+
+    Pagination:
+      type: object
+      properties:
+        total:
+          type: integer
+          description: Número total de elementos
+          example: 1
+        pages:
+          type: integer
+          description: Número total de páginas
+          example: 1
+        page:
+          type: integer
+          description: Número de página actual
+          example: 1
+        limit:
+          type: integer
+          description: Límite de elementos por página
+          example: 10
+
+    UserLMSProgressResponse:
+      type: object
+      properties:
+        user_id:
+          type: string
+          description: ID del usuario desde el LMS
+          example: '1'
+        user_name:
+          type: string
+          description: Nombre del usuario desde el LMS
+          example: Will Alva
+        lps:
+          type: array
+          items:
+            $ref: '#/components/schemas/LearningPathProgress'
+
+    LearningPathProgress:
+      type: object
+      properties:
+        lp_id:
+          type: string
+          description: ID del learning path desde el LMS
+          example: '1'
+        lp_name:
+          type: string
+          description: Nombre del plan de carrera desde el LMS
+          example: Ejemplo 1
+        description:
+          type: string
+          description: Descripción del plan de carrera desde el LMS
+          example: Descripción
+        lp_progress:
+          type: number
+          description: Progreso del plan de carrera desde el LMS
+          example: 0
+        sections:
+          type: array
+          items:
+            $ref: '#/components/schemas/SectionProgress'
+
+    SectionProgress:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Nombre del curso
+          example: Curso Demo
+        progress:
+          type: number
+          description: Progreso del curso desde el LMS
+          example: 0
+        courses:
+          type: array
+          items:
+            $ref: '#/components/schemas/CourseProgress'
+
+    RedeemRequest:
+      type: object
+      properties:
+        cardCodes:
+          type: array
+          items:
+            type: string
+          description: Listado de folios de tarjetas
+        firstName:
+          type: string
+          description: Nombre del usuario
+        lastName:
+          type: string
+          description: Apellidos del usuario
+        userEmail:
+          type: string
+          format: email
+          description: Email del usuario
+        dueDate:
+          type: string
+          format: date
+          description: Fecha de vencimiento
+        lpid:
+          type: string
+          description: ID del plan de carrera
+      required:
+        - cardCodes
+        - firstName
+        - lastName
+        - userEmail
+        - dueDate
+        - lpid
+
+    CourseProgress:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID de la materia desde el LMS
+          example: '1'
+        name:
+          type: string
+          description: Nombre de la materia desde el LMS
+          example: Materia Demo
+        inscription_date:
+          type: string
+          format: date-time
+          description: Fecha de inscripción desde el LMS
+          example: 2025-03-10
+        progress:
+          type: number
+          description: Progreso de la materia desde el LMS
+          example: 0
+        score:
+          type: number
+          description: Promedio de la materia desde el LMS
+          example: 10
+        modules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModuleProgress'
+
+    ModuleProgress:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Nombre del módulo desde el LMS
+          example: Modulo Demo
+        description:
+          type: string
+          description: Descripción del módulo desde el LMS
+          example: Descripción
+        progress:
+          type: number
+          description: Progreso del módulo desde el LMS
+          example: 0
+        score:
+          type: number
+          description: Promedio del módulo desde el LMS
+          example: 10
+        lessons:
+          type: array
+          items:
+            $ref: '#/components/schemas/LessonProgress'
+
+    LessonProgress:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Nombre del tema desde el LMS
+          example: Tema Demo
+        description:
+          type: string
+          description: Descripción del tema desde el LMS
+          example: Descripción
+        userProgress:
+          type: number
+          description: Progreso del tema desde el LMS
+          example: 0
+        userScore:
+          type: number
+          description: Promedio del tema desde el LMS
+          example: 10
+
+    RedeemResponse:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/RedeemData'
+        status:
+          type: string
+          description: Estado de la respuesta (success, error, etc.)
+          enum: [success, error]
+          example: success
+        mensaje:
+          type: string
+          description: Mensaje del API redeem
+          example: success
+        token:
+          type: string
+          description: Token generado durante la redención, usado posteriormente en el endpoint `/token`
+          example: dummy-token-123
+
+    RedeemData:
+      type: object
+      properties:
+        lp_id:
+          type: string
+          description: ID del plan de carrera del LMS
+          example: '1'
+        lp_name:
+          type: string
+          description: Nombre del plan de carrera del LMS
+          example: Ejemplo 1
+        user_id:
+          type: string
+          description: ID del usuario en el LMS
+          example: '1'
+        dueDate:
+          type: string
+          format: date
+          description: Fecha de vencimiento del paquete
+          example: 2025-04-10
