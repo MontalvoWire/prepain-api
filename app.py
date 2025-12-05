@@ -4,7 +4,9 @@ import string
 from random import SystemRandom
 from typing import List, Optional
 
+import httpx
 from fastapi import FastAPI, Header, HTTPException, Path, Query
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
 
 from moodle_client import MOODLE_STUDENT_ROLE_ID, call_moodle
@@ -446,8 +448,24 @@ async def redeem(body: RedeemRequest, api_key: Optional[str] = Header(default=No
     return build_redeem_response(body)
 
 
-@app.post("/token", response_model=TokenValidation)
-def token(token: Optional[str] = Header(default=None)):
-    if not token or token != DUMMY_TOKEN:
-        raise HTTPException(status_code=400, detail="Token inválido o faltante")
-    return TokenValidation(user_id="user-001", lp_id="lp-001")
+@app.get("/token/{token}")
+async def validate_token_and_redirect(token: str):
+    validation_url = f"https://www.mieducacion.mx/v1/ms/ms_lms_validarToken/is_valid/{token}"
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.get(validation_url)
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail="Error al validar el token") from exc
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="Token inválido") from exc
+
+    if not isinstance(data, dict) or "user_id" not in data or "lp_id" not in data:
+        raise HTTPException(status_code=401, detail="Token inválido")
+
+    return RedirectResponse(url="https://prepa.in", status_code=302)
