@@ -242,6 +242,15 @@ def _generate_moodle_password(length: int = 16) -> str:
     return "".join(password_chars)
 
 
+def _to_datetime(timestamp_value: Optional[int]) -> datetime:
+    if timestamp_value:
+        try:
+            return datetime.fromtimestamp(timestamp_value)
+        except (TypeError, ValueError, OSError):
+            pass
+    return MOCK_TIMESTAMP
+
+
 async def _get_moodle_category_id() -> int:
     categories = await call_moodle(
         "core_course_get_categories",
@@ -322,22 +331,68 @@ async def handle_moodle_enrollment(body: RedeemRequest) -> None:
     await _enrol_user_to_courses(user_id, course_ids)
 
 
+async def _fetch_moodle_courses(category_id: int) -> List[dict]:
+    courses_response = await call_moodle(
+        "core_course_get_courses_by_field",
+        {"field": "category", "value": category_id},
+    )
+    courses = courses_response.get("courses") if isinstance(courses_response, dict) else None
+    if courses is None:
+        raise HTTPException(status_code=502, detail="Respuesta inválida de Moodle al obtener cursos")
+    return courses
+
+
+def _map_moodle_course_to_learning_path(course: dict) -> LearningPath:
+    course_id = str(course.get("id"))
+    name = course.get("fullname") or course.get("shortname") or course_id
+    description = course.get("summary") or ""
+    start_date = _to_datetime(course.get("startdate") or course.get("timecreated"))
+    end_date = _to_datetime(course.get("enddate")) if course.get("enddate") else None
+    created_at = _to_datetime(course.get("timecreated"))
+    updated_at = _to_datetime(course.get("timemodified"))
+
+    course_model = Course(id=course_id, name=name, modules=[])
+    section = Section(name=course.get("shortname") or name, courses=[course_model])
+
+    return LearningPath(
+        id=course_id,
+        name=name,
+        image_url=None,
+        conditioned_courses=False,
+        conditioned_sections=False,
+        min_progress=0,
+        certificate_delivery="LP ONLY",
+        condition_delivery="LP END",
+        welcome_message="",
+        is_gamified=False,
+        status="active",
+        start_date=start_date,
+        end_date=end_date,
+        created_at=created_at,
+        updated_at=updated_at,
+        description=description,
+        sections=[section],
+    )
+
+
 @app.get("/")
 def root():
     return {"status": "ok"}
 
 
 @app.get("/cursos", response_model=LearningPathsResponse)
-def cursos(
+async def cursos(
     lp_id: Optional[str] = Query(default=None, alias="lp-id", description="Opcional: filtra por lp-id"),
     api_key: Optional[str] = Header(default=None, alias="api-key"),
 ):
     require_api_key(api_key)
-    learning_paths = (
-        [build_learning_path(lp_id)]
-        if lp_id
-        else [build_learning_path("lp-1"), build_learning_path("lp-2")]
-    )
+    category_id = await _get_moodle_category_id()
+    courses = await _fetch_moodle_courses(category_id)
+    learning_paths = [_map_moodle_course_to_learning_path(course) for course in courses]
+
+    if lp_id:
+        learning_paths = [lp for lp in learning_paths if lp.id == lp_id]
+
     pagination = Pagination(total=len(learning_paths), pages=1, page=1, limit=len(learning_paths))
     return LearningPathsResponse(data=learning_paths, pagination=pagination)
 
