@@ -1,5 +1,7 @@
 from datetime import date, datetime
 import secrets
+import string
+from random import SystemRandom
 from typing import List, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Path, Query
@@ -230,6 +232,16 @@ def build_redeem_response(body: RedeemRequest) -> RedeemResponse:
     return RedeemResponse(data=[redeem_data], status="success", mensaje="Tarjetas redimidas", token=DUMMY_TOKEN)
 
 
+def _generate_moodle_password(length: int = 16) -> str:
+    letters_digits = string.ascii_letters + string.digits
+    specials = "*-#@!$"
+    pool = letters_digits + specials
+    password_chars = [secrets.choice(pool) for _ in range(max(length - 1, 1))]
+    password_chars.append(secrets.choice(specials))
+    SystemRandom().shuffle(password_chars)
+    return "".join(password_chars)
+
+
 async def _get_moodle_category_id() -> int:
     categories = await call_moodle(
         "core_course_get_categories",
@@ -270,7 +282,7 @@ async def _get_or_create_user(body: RedeemRequest) -> int:
             raise HTTPException(status_code=502, detail="Usuario encontrado sin id en Moodle")
         return user_id
 
-    password = secrets.token_urlsafe(16)
+    password = _generate_moodle_password()
     created_users = await call_moodle(
         "core_user_create_users",
         {
