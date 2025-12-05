@@ -15,6 +15,7 @@ def _get_moodle_token() -> str:
     return token
 
 
+
 async def call_moodle(function_name: str, params: Dict[str, Any]) -> Any:
     token = _get_moodle_token()
     payload: Dict[str, Any] = {
