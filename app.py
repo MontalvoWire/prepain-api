@@ -1,14 +1,18 @@
 from datetime import date, datetime
+import secrets
 from typing import List, Optional
 
 from fastapi import FastAPI, Header, HTTPException, Path, Query
 from pydantic import BaseModel, EmailStr
+
+from moodle_client import MOODLE_STUDENT_ROLE_ID, call_moodle
 
 app = FastAPI(title="PrepaIn API", version="1.0", description="Mock API alineada a openapi.yaml")
 
 DUMMY_API_KEY = "test-api-key"
 DUMMY_TOKEN = "dummy-token-123"
 MOCK_TIMESTAMP = datetime(2025, 3, 10, 12, 0, 0)
+MOODLE_CATEGORY_NAME = "prepain"
 
 
 class Pagination(BaseModel):
@@ -226,6 +230,86 @@ def build_redeem_response(body: RedeemRequest) -> RedeemResponse:
     return RedeemResponse(data=[redeem_data], status="success", mensaje="Tarjetas redimidas", token=DUMMY_TOKEN)
 
 
+async def _get_moodle_category_id() -> int:
+    categories = await call_moodle(
+        "core_course_get_categories",
+        {"criteria[0][key]": "name", "criteria[0][value]": MOODLE_CATEGORY_NAME},
+    )
+    category = next((cat for cat in categories if cat.get("name") == MOODLE_CATEGORY_NAME), None)
+    if not category:
+        raise HTTPException(status_code=400, detail=f"Categoría '{MOODLE_CATEGORY_NAME}' no encontrada en Moodle")
+    category_id = category.get("id")
+    if category_id is None:
+        raise HTTPException(status_code=502, detail="Respuesta inválida de Moodle al obtener la categoría")
+    return category_id
+
+
+async def _get_courses_in_category(category_id: int) -> List[int]:
+    courses_response = await call_moodle(
+        "core_course_get_courses_by_field",
+        {"field": "category", "value": category_id},
+    )
+    courses = courses_response.get("courses") if isinstance(courses_response, dict) else None
+    if courses is None:
+        raise HTTPException(status_code=502, detail="Respuesta inválida de Moodle al obtener cursos")
+
+    course_ids = [course.get("id") for course in courses if course.get("id") is not None]
+    if not course_ids:
+        raise HTTPException(status_code=400, detail=f"No hay cursos en la categoría '{MOODLE_CATEGORY_NAME}'")
+    return course_ids
+
+
+async def _get_or_create_user(body: RedeemRequest) -> int:
+    users = await call_moodle(
+        "core_user_get_users_by_field",
+        {"field": "email", "values[0]": body.userEmail},
+    )
+    if isinstance(users, list) and users:
+        user_id = users[0].get("id")
+        if user_id is None:
+            raise HTTPException(status_code=502, detail="Usuario encontrado sin id en Moodle")
+        return user_id
+
+    password = secrets.token_urlsafe(16)
+    created_users = await call_moodle(
+        "core_user_create_users",
+        {
+            "users[0][username]": body.userEmail,
+            "users[0][password]": password,
+            "users[0][firstname]": body.firstName,
+            "users[0][lastname]": body.lastName,
+            "users[0][email]": body.userEmail,
+            "users[0][auth]": "manual",
+            "users[0][lang]": "es_mx",
+        },
+    )
+
+    if not isinstance(created_users, list) or not created_users:
+        raise HTTPException(status_code=502, detail="No se pudo crear el usuario en Moodle")
+
+    user_id = created_users[0].get("id")
+    if user_id is None:
+        raise HTTPException(status_code=502, detail="Respuesta inválida de Moodle al crear usuario")
+    return user_id
+
+
+async def _enrol_user_to_courses(user_id: int, course_ids: List[int]) -> None:
+    enrolments = {}
+    for idx, course_id in enumerate(course_ids):
+        enrolments[f"enrolments[{idx}][roleid]"] = MOODLE_STUDENT_ROLE_ID
+        enrolments[f"enrolments[{idx}][userid]"] = user_id
+        enrolments[f"enrolments[{idx}][courseid]"] = course_id
+
+    await call_moodle("enrol_manual_enrol_users", enrolments)
+
+
+async def handle_moodle_enrollment(body: RedeemRequest) -> None:
+    category_id = await _get_moodle_category_id()
+    course_ids = await _get_courses_in_category(category_id)
+    user_id = await _get_or_create_user(body)
+    await _enrol_user_to_courses(user_id, course_ids)
+
+
 @app.get("/")
 def root():
     return {"status": "ok"}
@@ -266,8 +350,9 @@ def progress(
 
 
 @app.post("/redeem", response_model=RedeemResponse)
-def redeem(body: RedeemRequest, api_key: Optional[str] = Header(default=None, alias="api-key")):
+async def redeem(body: RedeemRequest, api_key: Optional[str] = Header(default=None, alias="api-key")):
     require_api_key(api_key)
+    await handle_moodle_enrollment(body)
     return build_redeem_response(body)
 
 
