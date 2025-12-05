@@ -410,6 +410,82 @@ async def _build_learning_paths_response(lp_id: Optional[str]) -> LearningPathsR
     return LearningPathsResponse(data=learning_paths, pagination=pagination)
 
 
+async def _resolve_moodle_user(user_identifier: str) -> dict:
+    field = "email" if "@" in user_identifier else "id"
+    users = await call_moodle(
+        "core_user_get_users_by_field",
+        {"field": field, "values[0]": user_identifier},
+    )
+    if not isinstance(users, list) or not users:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado en Moodle")
+    return users[0]
+
+
+async def _get_user_courses(userid: int) -> List[dict]:
+    courses = await call_moodle("core_enrol_get_users_courses", {"userid": userid})
+    if not isinstance(courses, list):
+        raise HTTPException(status_code=502, detail="Respuesta inválida de Moodle al obtener cursos de usuario")
+    return courses
+
+
+async def _get_course_progress(userid: int, courseid: int) -> float:
+    status_response = await call_moodle(
+        "core_completion_get_course_completion_status",
+        {"courseid": courseid, "userid": userid},
+    )
+    completion = status_response.get("completionstatus") if isinstance(status_response, dict) else None
+    if isinstance(completion, dict):
+        percentage = completion.get("percentage")
+        if isinstance(percentage, (int, float)):
+            return float(percentage)
+        if completion.get("completed") is True:
+            return 100.0
+    return 0.0
+
+
+def _build_course_progress_model(course: dict, progress_value: float) -> CourseProgress:
+    course_id = str(course.get("id"))
+    name = course.get("fullname") or course.get("shortname") or course_id
+    inscription_date = _to_datetime(course.get("enrolleddate"))
+    score = 0.0
+    return CourseProgress(
+        id=course_id,
+        name=name,
+        inscription_date=inscription_date,
+        progress=progress_value,
+        score=score,
+        modules=[],
+    )
+
+
+def _build_user_progress_response(
+    user: dict, lp_id: str, courses_progress: List[CourseProgress]
+) -> UserLMSProgressResponse:
+    if courses_progress:
+        average_progress = sum(c.progress for c in courses_progress) / len(courses_progress)
+    else:
+        average_progress = 0.0
+
+    section_progress_list = [
+        SectionProgress(name=course_progress.name, progress=course_progress.progress, courses=[course_progress])
+        for course_progress in courses_progress
+    ]
+
+    lp = LearningPathProgress(
+        lp_id=lp_id,
+        lp_name=f"LP {lp_id}",
+        description="",
+        lp_progress=average_progress,
+        sections=section_progress_list,
+    )
+
+    first_name = user.get("firstname", "") or ""
+    last_name = user.get("lastname", "") or ""
+    full_name = f"{first_name} {last_name}".strip()
+    user_name = user.get("fullname") or full_name
+    return UserLMSProgressResponse(user_id=str(user.get("id")), user_name=user_name, lps=[lp])
+
+
 @app.get("/")
 def root():
     return {"status": "ok"}
@@ -437,13 +513,24 @@ async def curso(
 
 
 @app.get("/user-lms-progress", response_model=UserLMSProgressResponse)
-def progress(
+async def progress(
     user_id: str = Query(..., alias="user-id"),
     lp_id: str = Query(..., alias="lp-id"),
     api_key: Optional[str] = Header(default=None, alias="api-key"),
 ):
     require_api_key(api_key)
-    return build_progress(user_id, lp_id)
+    user = await _resolve_moodle_user(user_id)
+    courses = await _get_user_courses(user.get("id"))
+
+    courses_progress: List[CourseProgress] = []
+    for course in courses:
+        course_id = course.get("id")
+        if course_id is None:
+            continue
+        progress_value = await _get_course_progress(user.get("id"), course_id)
+        courses_progress.append(_build_course_progress_model(course, progress_value))
+
+    return _build_user_progress_response(user, lp_id, courses_progress)
 
 
 @app.post("/redeem", response_model=RedeemResponse)
