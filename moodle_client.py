@@ -7,6 +7,9 @@ from fastapi import HTTPException
 MOODLE_BASE_URL = "https://prepa.in/webservice/rest/server.php"
 MOODLE_STUDENT_ROLE_ID = 5
 
+_token_env_value = os.getenv("MOODLE_TOKEN")
+print("MOODLE_TOKEN presente:", bool(_token_env_value), "prefijo:", (_token_env_value or "")[:4])
+
 
 def _get_moodle_token() -> str:
     token = os.getenv("MOODLE_TOKEN")
