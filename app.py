@@ -398,17 +398,7 @@ def _map_moodle_course_to_course(course: dict) -> Course:
     return Course(id=course_id, name=name, modules=[])
 
 
-@app.get("/")
-def root():
-    return {"status": "ok"}
-
-
-@app.get("/cursos", response_model=LearningPathsResponse)
-async def cursos(
-    lp_id: Optional[str] = Query(default=None, alias="lp-id", description="Opcional: filtra por lp-id"),
-    api_key: Optional[str] = Header(default=None, alias="api-key"),
-):
-    require_api_key(api_key)
+async def _build_learning_paths_response(lp_id: Optional[str]) -> LearningPathsResponse:
     category_id = await _get_moodle_category_id()
     courses = await _fetch_moodle_courses(category_id)
     learning_paths = [_map_moodle_course_to_learning_path(course) for course in courses]
@@ -420,15 +410,30 @@ async def cursos(
     return LearningPathsResponse(data=learning_paths, pagination=pagination)
 
 
-@app.get("/cursos/{cursoId}", response_model=Course)
-async def curso(
-    cursoId: str = Path(..., description="ID del curso"),
+@app.get("/")
+def root():
+    return {"status": "ok"}
+
+
+@app.get("/cursos", response_model=LearningPathsResponse)
+async def cursos(
+    lp_id: Optional[str] = Query(default=None, alias="lp-id", description="Opcional: filtra por lp-id"),
     api_key: Optional[str] = Header(default=None, alias="api-key"),
 ):
     require_api_key(api_key)
-    category_id = await _get_moodle_category_id()
-    course = await _fetch_moodle_course_by_id(cursoId, category_id)
-    return _map_moodle_course_to_course(course)
+    return await _build_learning_paths_response(lp_id)
+
+
+@app.get("/cursos/{lp_id}", response_model=LearningPathsResponse)
+async def curso(
+    lp_id: str = Path(..., description="ID del learning path/curso"),
+    api_key: Optional[str] = Header(default=None, alias="api-key"),
+):
+    require_api_key(api_key)
+    result = await _build_learning_paths_response(lp_id)
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Curso no encontrado")
+    return result
 
 
 @app.get("/user-lms-progress", response_model=UserLMSProgressResponse)
