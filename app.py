@@ -342,6 +342,21 @@ async def _fetch_moodle_courses(category_id: int) -> List[dict]:
     return courses
 
 
+async def _fetch_moodle_course_by_id(course_id: str, category_id: int) -> dict:
+    courses_response = await call_moodle(
+        "core_course_get_courses_by_field",
+        {"field": "id", "value": course_id},
+    )
+    courses = courses_response.get("courses") if isinstance(courses_response, dict) else None
+    if courses is None or not courses:
+        raise HTTPException(status_code=404, detail="Curso no encontrado")
+
+    course = courses[0]
+    if str(course.get("category")) != str(category_id):
+        raise HTTPException(status_code=404, detail="Curso no encontrado en la categoría solicitada")
+    return course
+
+
 def _map_moodle_course_to_learning_path(course: dict) -> LearningPath:
     course_id = str(course.get("id"))
     name = course.get("fullname") or course.get("shortname") or course_id
@@ -375,6 +390,12 @@ def _map_moodle_course_to_learning_path(course: dict) -> LearningPath:
     )
 
 
+def _map_moodle_course_to_course(course: dict) -> Course:
+    course_id = str(course.get("id"))
+    name = course.get("fullname") or course.get("shortname") or course_id
+    return Course(id=course_id, name=name, modules=[])
+
+
 @app.get("/")
 def root():
     return {"status": "ok"}
@@ -398,12 +419,14 @@ async def cursos(
 
 
 @app.get("/cursos/{cursoId}", response_model=Course)
-def curso(
+async def curso(
     cursoId: str = Path(..., description="ID del curso"),
     api_key: Optional[str] = Header(default=None, alias="api-key"),
 ):
     require_api_key(api_key)
-    return build_course(cursoId)
+    category_id = await _get_moodle_category_id()
+    course = await _fetch_moodle_course_by_id(cursoId, category_id)
+    return _map_moodle_course_to_course(course)
 
 
 @app.get("/user-lms-progress", response_model=UserLMSProgressResponse)
