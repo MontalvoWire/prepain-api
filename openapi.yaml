@@ -1,19 +1,23 @@
 openapi: 3.0.0
 info:
   title: PrepaIn API
-  version: '1.0'
+  version: '1.1'
   description: Documentación de la API de PrepaIn
 servers:
   - url: http://prepa.in/api
-  - description: Testing
-    url: https://virtserver.swaggerhub.com/montalvowire/PrepaIn/1.0
-  - description: QA Prepa In
-    url: http://prepa.in/api
+    description: Servidor PrepaIn (QA/Producción)
+  - url: https://virtserver.swaggerhub.com/montalvowire/PrepaIn/1.0
+    description: Testing (SwaggerHub mock)
 
 paths:
   /cursos:
     get:
       summary: Obtener Learning Paths
+      description: >
+        Obtiene la lista de Learning Paths visibles para el usuario. Internamente
+        la API consulta Moodle (por ejemplo, cursos dentro de la categoría
+        "prepain") y transforma la información al esquema de Learning Paths
+        definido en esta especificación.
       parameters:
         - in: header
           name: api-key
@@ -40,6 +44,10 @@ paths:
   /cursos/{cursoId}:
     get:
       summary: Obtener información de un curso individual
+      description: >
+        Obtiene la información detallada de un curso individual. Internamente
+        la API consulta el curso correspondiente en Moodle y mapea los datos al
+        esquema `Course` definido en esta especificación.
       parameters:
         - in: header
           name: api-key
@@ -68,6 +76,11 @@ paths:
   /user-lms-progress:
     get:
       summary: Obtener progreso del usuario en LMS
+      description: >
+        Obtiene el progreso del usuario en el LMS para un Learning Path dado,
+        incluyendo el progreso de cada curso y módulo, y el progreso agregado
+        del Learning Path (`lp_progress`), típicamente calculado como el
+        promedio del progreso de todos los cursos pertenecientes a ese LP.
       parameters:
         - in: header
           name: api-key
@@ -105,7 +118,7 @@ paths:
       description: >
         Redime tarjetas, registra o localiza al usuario, lo inscribe al plan de
         carrera en Moodle y genera un token que posteriormente será validado en
-        el endpoint `/token`.
+        el endpoint `/token/{token}`.
       parameters:
         - in: header
           name: api-key
@@ -132,30 +145,39 @@ paths:
         '500':
           description: Error interno del servidor durante la redención.
 
-  /token:
-    post:
-      summary: Valida token y obtiene información del usuario
+  /token/{token}:
+    get:
+      summary: Validar token externo y redirigir al LMS
       description: >
-        Valida el token generado previamente por el endpoint `/redeem` y
-        devuelve el ID del usuario y el ID del plan de carrera asociado.
+        Valida un token recibido en la URL contra el servicio externo
+        `https://www.mieducacion.mx/v1/ms/ms_lms_validarToken/is_valid/{token}`.
+        Si el token es válido (el servicio externo responde un objeto con
+        `user_id` y `lp_id`), la API redirige al navegador a `https://prepa.in`.
+        A nivel de contrato, este endpoint también puede exponer la estructura
+        lógica de la validación mediante la respuesta `200` con el esquema
+        `TokenValidation`.
       parameters:
-        - in: header
-          name: token
+        - name: token
+          in: path
+          required: true
           schema:
             type: string
-          required: true
-          description: Token generado por el endpoint `/redeem`
+          description: Token generado previamente (por ejemplo, por `/redeem`) o proporcionado por un sistema externo
       responses:
         '200':
-          description: Token válido
+          description: Token válido (vista lógica de la validación)
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/TokenValidation'
+        '302':
+          description: Redirección al LMS (`https://prepa.in`) cuando el token es válido.
         '400':
           description: Token inválido o error en la solicitud.
+        '401':
+          description: No autorizado. Token inválido.
         '500':
-          description: Error interno al procesar el token.
+          description: Error interno al procesar el token o al contactar el servicio externo.
 
 components:
   schemas:
@@ -174,11 +196,11 @@ components:
       properties:
         user_id:
           type: string
-          description: ID del usuario
+          description: ID del usuario validado por el servicio externo
           example: '1'
         lp_id:
           type: string
-          description: ID del plan de carrera
+          description: ID del plan de carrera asociado al token
           example: '1'
 
     LearningPath:
@@ -377,7 +399,7 @@ components:
           example: Descripción
         lp_progress:
           type: number
-          description: Progreso del plan de carrera desde el LMS
+          description: Progreso del plan de carrera desde el LMS (ej. promedio de todos los cursos del LP)
           example: 0
         sections:
           type: array
@@ -524,7 +546,7 @@ components:
           example: success
         token:
           type: string
-          description: Token generado durante la redención, usado posteriormente en el endpoint `/token`
+          description: Token generado durante la redención, usado posteriormente en el endpoint `/token/{token}`
           example: dummy-token-123
 
     RedeemData:
