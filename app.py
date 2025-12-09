@@ -1,3 +1,4 @@
+import os
 from datetime import date, datetime
 import secrets
 import string
@@ -11,7 +12,14 @@ from pydantic import BaseModel, EmailStr
 
 from moodle_client import MOODLE_STUDENT_ROLE_ID, call_moodle
 
-app = FastAPI(title="PrepaIn API", version="1.0", description="Mock API alineada a openapi.yaml")
+ROOT_PATH = os.getenv("API_ROOT_PATH", "/api")
+
+app = FastAPI(
+    title="PrepaIn API",
+    version="1.0",
+    description="Mock API alineada a openapi.yaml",
+    root_path=ROOT_PATH,
+)
 
 DUMMY_API_KEY = "test-api-key"
 DUMMY_TOKEN = "dummy-token-123"
