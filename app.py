@@ -13,7 +13,7 @@ from moodle_client import MOODLE_STUDENT_ROLE_ID, call_moodle
 
 app = FastAPI(title="PrepaIn API", version="1.0", description="Mock API alineada a openapi.yaml")
 
-DUMMY_API_KEY = "test-api-key"
+DUMMY_API_KEY = "AIzaSyDaGmWKa4JsXZ-HjGw7ISLn_3namBGewQe"
 DUMMY_TOKEN = "dummy-token-123"
 MOCK_TIMESTAMP = datetime(2025, 3, 10, 12, 0, 0)
 MOODLE_CATEGORY_NAME = "prepain"
